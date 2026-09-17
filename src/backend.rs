@@ -938,13 +938,11 @@ impl Backend {
     /// The same thread rule as the playlist cover: the dialog is built where
     /// the platform wants its window, and awaited on the runtime.
     pub fn choose_cache_folder(&self, request: u64) {
-        if self.offline {
-            return;
-        }
         let selected = rfd::AsyncFileDialog::new()
             .set_title("Choose cache folder")
             .pick_folder();
-        self.send(Command::ChooseCacheFolder {
+        // Bypass Backend::send so offline/demo mode can still run this local dialog.
+        let _ = self.commands.send(Command::ChooseCacheFolder {
             request,
             selected: Box::pin(selected),
         });
