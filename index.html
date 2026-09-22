@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spotifast: cache folder picker, before and after</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #fafafa; color: #1d1d1f;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #131315; color: #ececf1; }
+    .card { background: #1c1c1f !important; border-color: #2c2c31 !important; }
+    .meta dt, .group > span:first-child, p.lead, .caption, .hint { color: #9a9aa2; }
+    button { background: #26262b !important; border-color: #3a3a41 !important; color: inherit !important; }
+    button[aria-pressed="true"] { background: #4a5cf5 !important; border-color: #4a5cf5 !important; color: #fff !important; }
+    button[disabled] { opacity: .4; }
+    code { background: #26262b; }
+    .stage { border-color: #2c2c31; }
+  }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 15px; margin: 0 0 10px; }
+  p.lead { margin: 0 0 20px; max-width: 78ch; line-height: 1.55; color: #55555c; }
+  .card { background: #fff; border: 1px solid #e3e3e8; border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; }
+  .meta { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; font-size: 13px; }
+  .meta dt { color: #73737c; }
+  .meta dd { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.5; }
+  .meta dd.prose { font-family: inherit; font-size: 13px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 22px; align-items: center; margin-bottom: 14px; }
+  .group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .group > span:first-child { font-size: 13px; color: #73737c; margin-right: 4px; }
+  button {
+    font: inherit; font-size: 13px; padding: 6px 12px; cursor: pointer;
+    background: #f2f2f5; border: 1px solid #dcdce2; border-radius: 8px; color: inherit;
+  }
+  button[aria-pressed="true"] { background: #4a5cf5; border-color: #4a5cf5; color: #fff; }
+  button[disabled] { opacity: .35; cursor: default; }
+  .stage { position: relative; border: 1px solid #e3e3e8; border-radius: 10px; overflow: auto; background: #000; max-height: 78vh; }
+  .stage img { display: block; width: 100%; height: auto; }
+  .stage img.over { position: absolute; inset: 0; }
+  .slider-row { display: none; gap: 10px; align-items: center; margin-top: 12px; }
+  .slider-row.on { display: flex; }
+  .slider-row input { flex: 1; }
+  .caption { font-size: 13px; color: #73737c; margin: 12px 0 0; line-height: 1.55; }
+  ul.notes { margin: 0; padding-left: 20px; line-height: 1.75; font-size: 14px; }
+  ul.notes li { margin-bottom: 4px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: #eeeef3; padding: 1px 5px; border-radius: 4px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .hint { font-size: 12px; color: #8a8a92; margin: 10px 0 0; }
+</style>
+</head>
+<body>
+
+<h1>Settings: choose the cache folder, and more cache sizes</h1>
+<p class="lead">
+  Before and after captures of the same page, at the same data, window sizes and themes, for PR
+  #521 (<code>Closes #520</code>). The change adds a <strong>Cache folder</strong> row with a folder
+  picker in <em>Storage</em>, and grows the audio cache sizes from three choices to seven. Pick a
+  region, a theme and a view below.
+</p>
+
+<div class="card">
+  <dl class="meta">
+    <dt>Baseline</dt>
+    <dd>f323ea7 &mdash; <span class="prose">the main commit the branch was cut from</span></dd>
+    <dt>Candidate</dt>
+    <dd>d847bbe &mdash; <span class="prose">the branch head when these were captured. The commits on
+      top of it, up to f0b978e, touch no file under <code>src/ui/</code>, checked with
+      <code>git diff --stat d847bbe..HEAD -- src/ui/</code>, so these captures show the current
+      branch.</span></dd>
+    <dt>Platforms</dt>
+    <dd>Linux x86_64 <span class="prose">only. No macOS or Windows captures.</span></dd>
+    <dt>Build</dt>
+    <dd><span class="prose">debug, from source, <code>--no-default-features --features demo</code>
+      (MilkDrop not compiled in), rendered under Xvfb with Mesa llvmpipe software OpenGL. Compiled
+      and captured inside a Debian container, so the machine that produced this was not
+      altered.</span></dd>
+    <dt>Data</dt>
+    <dd><span class="prose">demo mode, one shared demo folder for every capture, so the paths shown
+      in the rows are the same on both sides.</span></dd>
+  </dl>
+</div>
+
+<div class="controls">
+  <div class="group" role="group" aria-label="Region">
+    <span>Region</span>
+    <button data-region="page" aria-pressed="true">Whole page</button>
+    <button data-region="storage" aria-pressed="false">Storage section</button>
+    <button data-region="sizes" aria-pressed="false">Cache sizes</button>
+    <button data-region="chosen" aria-pressed="false">Already chosen</button>
+  </div>
+  <div class="group" role="group" aria-label="Theme">
+    <span>Theme</span>
+    <button data-theme="dark" aria-pressed="true">Dark</button>
+    <button data-theme="light" aria-pressed="false">Light</button>
+  </div>
+  <div class="group" role="group" aria-label="Window width">
+    <span>Window</span>
+    <button data-width="760" aria-pressed="false">Narrow</button>
+    <button data-width="1100" aria-pressed="true">Normal</button>
+  </div>
+  <div class="group" role="group" aria-label="View">
+    <span>View</span>
+    <button data-view="before" aria-pressed="false">Before</button>
+    <button data-view="after" aria-pressed="false">After</button>
+    <button data-view="slider" aria-pressed="true">Slider</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="stage" id="stage">
+    <img id="img-before" alt="Spotifast Settings before the change">
+    <img id="img-after" class="over" alt="Spotifast Settings after the change">
+  </div>
+  <div class="slider-row on" id="slider-row">
+    <span style="font-size:13px">Before</span>
+    <input type="range" min="0" max="100" value="50" id="slider" aria-label="Comparison slider">
+    <span style="font-size:13px">After</span>
+  </div>
+  <p class="caption" id="caption"></p>
+  <p class="hint" id="hint"></p>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>What to look at</h2>
+    <ul class="notes">
+      <li><strong>Storage section</strong>: the new <strong>Cache folder</strong> row. Before, the
+        section starts at <em>Artwork cache</em>, and nothing there says where the caches live.</li>
+      <li><strong>Cache sizes</strong>: the <em>Audio cache</em> row in <em>Playback on this
+        computer</em>. Before: 512 MB, 1 GB and 4 GB on one line. After: 256 MB, 512 MB, 1 GB,
+        2 GB, 4 GB, 8 GB and 16 GB, which wraps onto three lines at this width.</li>
+      <li><strong>Already chosen</strong>: both sides are given the same stored preference, a folder
+        named in the demo settings file. Before, it is ignored, the rows show the default cache
+        folder and there is no control to change it. After, the row shows the chosen folder with
+        <strong>Use default</strong> and <strong>Change folder</strong>, and the artwork and audio
+        cache rows point inside it.</li>
+      <li><strong>Whole page</strong>: everything above at once, at two window widths, which is also
+        where the rest of the page can be checked for damage.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>Remaining checks</h2>
+    <ul class="notes">
+      <li>The picker dialog itself is not in these captures. A native dialog cannot be opened in the
+        headless setup they were made in, so the row appears in its resting state.</li>
+      <li>A folder chosen inside a <strong>Flatpak</strong> sandbox is not verified here. The picker
+        goes through the desktop portal, so the stored path is a portal one, and whether it survives
+        a restart is a portal property. What the application does when the stored folder is not
+        usable at start is the documented fallback.</li>
+      <li>No macOS or Windows captures, and no recording of the picker being used.</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  const REGIONS = {
+    page:    {
+      file: (side, theme, width) => `${side}-page-${theme}-${width}.png`,
+      usesWidth: true,
+      caption: "The whole Settings page in one capture, so the Storage section is included."
+    },
+    storage: {
+      file: (side, theme) => `${side}-storage-${theme}.png`,
+      usesWidth: false,
+      caption: "The Storage section. Both sides are cut so the heading sits at the same height, and the inserted row pushes the rows below it down."
+    },
+    sizes:   {
+      file: (side, theme) => `${side}-sizes-${theme}.png`,
+      usesWidth: false,
+      caption: "The Audio cache row and the sizes it offers."
+    },
+    chosen:  {
+      file: (side, theme) => `${side}-chosen-${theme}.png`,
+      usesWidth: false,
+      caption: "The Storage section with a cache folder already stored in the settings file. The demo settings were seeded, identically for both sides."
+    }
+  };
+  const state = { region: "page", theme: "dark", width: "1100", view: "slider" };
+
+  const before = document.getElementById("img-before");
+  const after = document.getElementById("img-after");
+  const sliderRow = document.getElementById("slider-row");
+  const slider = document.getElementById("slider");
+  const caption = document.getElementById("caption");
+  const hint = document.getElementById("hint");
+  const stage = document.getElementById("stage");
+
+  function render() {
+    const region = REGIONS[state.region];
+    before.src = region.file("before", state.theme, state.width);
+    after.src = region.file("after", state.theme, state.width);
+    before.hidden = state.view === "after";
+    after.hidden = state.view === "before";
+    after.style.position = state.view === "slider" ? "absolute" : "static";
+    after.style.clipPath = state.view === "slider" ? `inset(0 0 0 ${slider.value}%)` : "none";
+    sliderRow.classList.toggle("on", state.view === "slider");
+    caption.textContent = region.caption;
+    hint.textContent = region.usesWidth
+      ? "Full page images are tall: the panel scrolls."
+      : "Both sides are the same size, so the slider compares them directly.";
+    document.querySelectorAll("[data-width]").forEach(b => {
+      b.disabled = !region.usesWidth;
+      b.setAttribute("aria-pressed", String(b.dataset.width === state.width));
+    });
+    for (const key of ["region", "theme", "view"]) {
+      document.querySelectorAll(`[data-${key}]`).forEach(b =>
+        b.setAttribute("aria-pressed", String(b.dataset[key] === state[key])));
+    }
+    stage.scrollTop = 0;
+  }
+
+  document.querySelectorAll("[data-region]").forEach(b =>
+    b.onclick = () => { state.region = b.dataset.region; render(); });
+  document.querySelectorAll("[data-theme]").forEach(b =>
+    b.onclick = () => { state.theme = b.dataset.theme; render(); });
+  document.querySelectorAll("[data-width]").forEach(b =>
+    b.onclick = () => { state.width = b.dataset.width; render(); });
+  document.querySelectorAll("[data-view]").forEach(b =>
+    b.onclick = () => { state.view = b.dataset.view; render(); });
+  slider.oninput = render;
+
+  const missing = [];
+  const expected = [];
+  for (const theme of ["dark", "light"]) {
+    for (const width of ["760", "1100"]) {
+      expected.push(`before-page-${theme}-${width}.png`, `after-page-${theme}-${width}.png`);
+    }
+    for (const region of ["storage", "sizes", "chosen"]) {
+      expected.push(`before-${region}-${theme}.png`, `after-${region}-${theme}.png`);
+    }
+  }
+  let pending = expected.length;
+  const probe = name => {
+    const image = new Image();
+    image.onload = image.onerror = () => {
+      if (!image.naturalWidth) missing.push(name);
+      if (--pending === 0 && missing.length) {
+        hint.textContent = "Missing captures: " + missing.join(", ");
+      }
+    };
+    image.src = name;
+  };
+  expected.forEach(probe);
+
+  render();
+</script>
+</body>
+</html>
