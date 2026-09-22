@@ -476,6 +476,29 @@ pub(crate) fn run() -> eframe::Result<()> {
     if let Some(name) = cli.device_name {
         settings.device_name = name;
     }
+    // The folder the listener chose is the root of every cache. It is resolved
+    // here and nowhere else: the rest of the app asks `dirs` where each cache
+    // lives. A choice that cannot be used stays in settings, so a disk that is
+    // not there today does not lose it, and the platform folder is used.
+    let mut dirs = dirs;
+    if let Some(chosen) = settings
+        .cache_dir
+        .as_deref()
+        .map(str::trim)
+        .filter(|chosen| !chosen.is_empty())
+    {
+        match paths::check_cache_folder(chosen) {
+            Ok(folder) => {
+                log::info!("storing every cache in {}", folder.display());
+                dirs.cache = folder;
+                if let Err(error) = dirs.ensure() {
+                    log::warn!("unable to create the cache directories: {error}");
+                }
+            }
+            Err(reason) => log::warn!("using the default cache folder: {chosen}: {reason}"),
+        }
+    }
+
     // macOS delivers links as Apple Events; install before the event loop.
     #[cfg(target_os = "macos")]
     if let Some(guard) = &instance {

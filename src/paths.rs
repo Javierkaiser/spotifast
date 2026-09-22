@@ -4,7 +4,7 @@
 //! platform's conventional directories. Spotify grants use the platform store;
 //! the token paths below are retained only for migration and sign-out cleanup.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use directories::ProjectDirs;
 
@@ -233,6 +233,74 @@ pub fn migrate_directory(
     Ok(())
 }
 
+/// Check a cache folder chosen by the listener before anything writes in it.
+///
+/// `~` and `~/...` mean the home directory. The text comes from the picker or
+/// from `settings.json`, so a relative one is refused. The folder must already
+/// exist, be a directory, and accept a file: a read-only folder or a disk that
+/// is not there is caught now instead of failing on every cache write later.
+///
+/// The reason is a clause with no final stop, so callers can put it inside a
+/// sentence: `Err("it cannot be written to")`.
+pub fn check_cache_folder(raw: &str) -> Result<PathBuf, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("its path is empty".into());
+    }
+    check_cache_folder_path(&expand_home(trimmed))
+}
+
+/// The same check for a folder that is already a path, which is what the
+/// picker returns. Nothing is turned into text on the way in, so a folder
+/// whose name is not valid UTF-8 is refused rather than silently altered.
+pub fn check_cache_folder_path(folder: &Path) -> Result<PathBuf, String> {
+    if !folder.is_absolute() {
+        return Err("its path is not absolute".into());
+    }
+    match std::fs::metadata(folder) {
+        Ok(metadata) if metadata.is_dir() => {}
+        Ok(_) => return Err("it is not a folder".into()),
+        Err(_) => return Err("it does not exist".into()),
+    }
+    if folder.to_str().is_none() {
+        // A path that cannot be written into settings.json is no cache folder.
+        return Err("its path cannot be represented".into());
+    }
+    // A file of our own, removed at once: the folder has to accept writes
+    // before any cache is pointed at it.
+    let probe = folder.join(format!(".spotifast-write-{}", std::process::id()));
+    match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+    {
+        // The folder has to take the file back as well: evicting a cache entry
+        // removes one, so a folder that writes but never deletes is not usable.
+        Ok(_) => std::fs::remove_file(&probe)
+            .map_err(|_| "it cannot have a file removed from it".to_string())?,
+        Err(_) => return Err("it cannot be written to".into()),
+    }
+    Ok(folder.to_path_buf())
+}
+
+/// `~` and `~/rest` as the home directory. Anything else is left alone.
+fn expand_home(raw: &str) -> PathBuf {
+    if raw == "~" {
+        return home_dir().unwrap_or_else(|| PathBuf::from(raw));
+    }
+    match raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
+        Some(rest) => home_dir()
+            .map(|home| home.join(rest))
+            .unwrap_or_else(|| PathBuf::from(raw)),
+        None => PathBuf::from(raw),
+    }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    // The same crate that already answers where the platform keeps things.
+    directories::BaseDirs::new().map(|dirs| dirs.home_dir().to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -291,5 +359,68 @@ mod tests {
             );
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    use super::check_cache_folder;
+    use std::path::PathBuf;
+
+    fn scratch(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("spotifast-{name}-test-{}", std::process::id()))
+    }
+
+    #[test]
+    fn a_missing_or_relative_or_empty_folder_is_refused() {
+        assert_eq!(check_cache_folder("").unwrap_err(), "its path is empty");
+        assert_eq!(check_cache_folder("   ").unwrap_err(), "its path is empty");
+        assert_eq!(
+            check_cache_folder("cache").unwrap_err(),
+            "its path is not absolute"
+        );
+        let missing = scratch("absent-cache");
+        let _ = std::fs::remove_dir_all(&missing);
+        assert_eq!(
+            check_cache_folder(&missing.to_string_lossy()).unwrap_err(),
+            "it does not exist"
+        );
+    }
+
+    #[test]
+    fn a_file_is_not_a_cache_folder() {
+        let file = scratch("cache-file");
+        std::fs::write(&file, b"not a folder").unwrap();
+        assert_eq!(
+            check_cache_folder(&file.to_string_lossy()).unwrap_err(),
+            "it is not a folder"
+        );
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn a_folder_that_already_holds_the_probe_name_is_refused_and_keeps_the_file() {
+        let folder = scratch("cache-probe-taken");
+        std::fs::create_dir_all(&folder).unwrap();
+        // Another run, or another program, may already own this exact name.
+        let taken = folder.join(format!(".spotifast-write-{}", std::process::id()));
+        std::fs::write(&taken, b"not ours").unwrap();
+        assert_eq!(
+            check_cache_folder(&folder.to_string_lossy()).unwrap_err(),
+            "it cannot be written to"
+        );
+        assert!(taken.exists(), "a file this check did not create is kept");
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn an_existing_folder_is_accepted_and_keeps_no_probe_file() {
+        let folder = scratch("cache-ok");
+        std::fs::create_dir_all(&folder).unwrap();
+        let checked = check_cache_folder(&folder.to_string_lossy()).unwrap();
+        assert_eq!(checked, folder);
+        let leftovers: Vec<_> = std::fs::read_dir(&folder)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .collect();
+        assert!(leftovers.is_empty());
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }

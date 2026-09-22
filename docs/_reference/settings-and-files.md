@@ -38,9 +38,20 @@ Spotifast follows each platform's conventions. On Linux:
 | Account-scoped playlist page cache | `~/.cache/spotifast/playlists/<account-id>/` | Always |
 | Last run's log | `~/.local/state/spotifast/spotifast.log` | Always |
 | Crash log | `~/.local/state/spotifast/panic.log` | Always |
+| Caches, when a folder is chosen | The folder named by `cache_dir`, in place of the cache paths above | Always |
 
 Clearing caches never signs you out. Sign-out from Settings covers the shared
 and personal Web API grants and the independent playback credential.
+
+The folder that holds every cache can be changed under **Settings → Storage**.
+The choice is saved in `settings.json` as `cache_dir` and takes effect at the
+next start, because the engine and the artwork loader each keep the folder they
+opened; moving them under a playing track buys nothing. A chosen folder that is
+missing or cannot be written to at start is not used: Spotifast keeps the saved
+choice and uses the platform folder instead, and the reason is written to the
+log, so a disk that is not connected today does not lose the preference. The
+files left in the previous folder are neither moved nor deleted, and remain
+yours to remove.
 
 The following credential storage is available since 0.8.0.
 
@@ -218,6 +229,7 @@ main fields are:
 | `gapless` | `true` | Gapless playback |
 | `audio_backend` | platform | `pulseaudio` or `rodio` on Linux |
 | `audio_cache_mb` | `1024` | On-disk audio cache budget |
+| `cache_dir` | absent | Folder holding every cache, audio, artwork, lyrics, playlists, and Liked Songs; absent uses the platform cache directory and a change applies after a restart |
 | `theme` | `system` | Follow the system appearance by default; explicit `dark` and `light` choices remain available |
 | `custom_theme` | `null` | Selected JSON filename from the `themes` folder |
 | `custom_theme_cache` | absent | Last accepted custom palette; preserves appearance if its file is missing or invalid |

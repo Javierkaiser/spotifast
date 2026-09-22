@@ -535,6 +535,11 @@ pub enum Command {
         selected:
             std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>>,
     },
+    ChooseCacheFolder {
+        request: u64,
+        selected:
+            std::pin::Pin<Box<dyn std::future::Future<Output = Option<rfd::FileHandle>> + Send>>,
+    },
     /// Start (or restart) the Web API sign-in in the browser.
     SignIn {
         request: u64,
@@ -706,6 +711,12 @@ pub enum Event {
         id: String,
         request: u64,
         result: Result<Option<crate::playlist_cover::Cover>, String>,
+    },
+    /// The folder picked for the caches, already checked. `Ok(None)` is a
+    /// cancelled dialog, `Err` is a folder that cannot be used.
+    CacheFolderChosen {
+        request: u64,
+        result: Result<Option<std::path::PathBuf>, String>,
     },
     Auth(AuthStatus),
     Playback(LocalPlayback),
@@ -937,6 +948,7 @@ impl Backend {
                     | Command::InspectUpdate
                     | Command::DownloadUpdate { .. }
                     | Command::InstallUpdate { .. }
+                    | Command::ChooseCacheFolder { .. }
             )
         {
             return;
@@ -956,6 +968,18 @@ impl Backend {
             .pick_file();
         self.send(Command::ChoosePlaylistCover {
             id,
+            request,
+            selected: Box::pin(selected),
+        });
+    }
+
+    /// The same thread rule as the playlist cover: the dialog is built where
+    /// the platform wants its window, and awaited on the runtime.
+    pub fn choose_cache_folder(&self, request: u64) {
+        let selected = rfd::AsyncFileDialog::new()
+            .set_title("Choose cache folder")
+            .pick_folder();
+        self.send(Command::ChooseCacheFolder {
             request,
             selected: Box::pin(selected),
         });
@@ -1533,6 +1557,31 @@ impl Worker {
                             request,
                             result,
                         });
+                        waker.wake();
+                    });
+                }
+                Command::ChooseCacheFolder { request, selected } => {
+                    let events = self.events.clone();
+                    let waker = self.waker.clone();
+                    tokio::spawn(async move {
+                        let result = match selected.await {
+                            None => Ok(None),
+                            Some(folder) => {
+                                // The folder is checked off the runtime: the
+                                // probe reads and writes the disk. The path is
+                                // kept as a path, because turning it into text
+                                // here would hide a name that settings cannot
+                                // hold before the check could refuse it.
+                                let path = folder.path().to_path_buf();
+                                tokio::task::spawn_blocking(move || {
+                                    crate::paths::check_cache_folder_path(&path)
+                                })
+                                .await
+                                .unwrap_or_else(|_| Err("it is not available".to_string()))
+                                .map(Some)
+                            }
+                        };
+                        let _ = events.send(Event::CacheFolderChosen { request, result });
                         waker.wake();
                     });
                 }
