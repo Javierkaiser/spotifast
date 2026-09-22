@@ -1625,7 +1625,11 @@ impl App {
 
     fn handle_backend_events(&mut self, events: Vec<Event>) {
         for event in events {
+            // The cache-folder picker is a purely local dialog, so its answer
+            // must survive the offline guard that otherwise drops network-bound
+            // events. Everything else keeps the exact previous behavior.
             if self.offline
+                && !matches!(&event, Event::CacheFolderChosen { .. })
                 && (matches!(self.update_source, crate::updates::Source::GitHub)
                     || !matches!(
                         &event,
@@ -12750,6 +12754,31 @@ mod tests {
             result: Ok(Some(chosen.clone())),
         }]);
         assert_eq!(app.settings.cache_dir.as_deref(), chosen.to_str());
+        app.backend.shutdown();
+    }
+
+    #[test]
+    fn cache_folder_choice_is_not_dropped_when_offline() {
+        let mut app = test_app("cache-picker-offline");
+        let ctx = egui::Context::default();
+        // Update source is GitHub by default; even so, the picker is a local
+        // dialog and its answer must survive the offline guard.
+        app.offline = true;
+        assert!(matches!(app.update_source, crate::updates::Source::GitHub));
+        app.apply(Action::UseDefaultCacheFolder, &ctx);
+        let chosen = std::env::temp_dir().join(format!(
+            "spotifast-cache-picker-offline-{}",
+            std::process::id()
+        ));
+        app.handle_backend_events(vec![Event::CacheFolderChosen {
+            request: app.cache_folder_request,
+            result: Ok(Some(chosen.clone())),
+        }]);
+        assert_eq!(
+            app.settings.cache_dir.as_deref(),
+            chosen.to_str(),
+            "an offline run must not drop the cache-folder picker answer"
+        );
         app.backend.shutdown();
     }
 

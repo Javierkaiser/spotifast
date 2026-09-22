@@ -481,12 +481,10 @@ pub(crate) fn run() -> eframe::Result<()> {
     // lives. A choice that cannot be used stays in settings, so a disk that is
     // not there today does not lose it, and the platform folder is used.
     let mut dirs = dirs;
-    if let Some(chosen) = settings
-        .cache_dir
-        .as_deref()
-        .map(str::trim)
-        .filter(|chosen| !chosen.is_empty())
-    {
+    // The stock cache root keeps any state that predates the folder override:
+    // the mini-player state is moved from it to the config dir below, once.
+    let platform_cache = dirs.cache.clone();
+    if let Some(chosen) = settings.cache_dir.as_deref().map(str::trim) {
         match paths::check_cache_folder(chosen) {
             Ok(folder) => {
                 log::info!("storing every cache in {}", folder.display());
@@ -498,6 +496,10 @@ pub(crate) fn run() -> eframe::Result<()> {
             Err(reason) => log::warn!("using the default cache folder: {chosen}: {reason}"),
         }
     }
+    // The mini-player state used to live under the cache root, so a chosen
+    // cache folder would silently move it. Keep it in the config dir instead
+    // and move a leftover copy from the stock cache root once.
+    paths::migrate_winamp_state(&platform_cache, &dirs.config);
 
     // macOS delivers links as Apple Events; install before the event loop.
     #[cfg(target_os = "macos")]
@@ -793,7 +795,7 @@ impl MiniWindow {
             position: app.winamp.restore_pos,
             on_top: app.settings.winamp_on_top,
             taskbar: app.settings.winamp_show_taskbar,
-            storage_path: app.dirs.cache.join("winamp.ron"),
+            storage_path: app.dirs.config.join("winamp.ron"),
         })
     }
 }

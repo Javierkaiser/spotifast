@@ -260,7 +260,10 @@ pub fn check_cache_folder_path(folder: &Path) -> Result<PathBuf, String> {
     match std::fs::metadata(folder) {
         Ok(metadata) if metadata.is_dir() => {}
         Ok(_) => return Err("it is not a folder".into()),
-        Err(_) => return Err("it does not exist".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Err("it does not exist".into());
+        }
+        Err(_) => return Err("it cannot be inspected".into()),
     }
     if folder.to_str().is_none() {
         // A path that cannot be written into settings.json is no cache folder.
@@ -281,6 +284,20 @@ pub fn check_cache_folder_path(folder: &Path) -> Result<PathBuf, String> {
         Err(_) => return Err("it cannot be written to".into()),
     }
     Ok(folder.to_path_buf())
+}
+
+/// The mini-player state (eframe's `winamp.ron`) used to live under the cache
+/// root, so a chosen cache folder could relocate it. It is now kept in the
+/// config dir; move a leftover copy from the stock cache root there once.
+pub fn migrate_winamp_state(from_cache: &Path, to_config: &Path) {
+    let from = from_cache.join("winamp.ron");
+    let to = to_config.join("winamp.ron");
+    if !to.exists() && from.exists() {
+        match std::fs::rename(&from, &to) {
+            Ok(()) => log::info!("moved the mini-player state to its new location"),
+            Err(error) => log::warn!("unable to move the mini-player state: {error}"),
+        }
+    }
 }
 
 /// `~` and `~/rest` as the home directory. Anything else is left alone.
@@ -422,5 +439,41 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty());
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn a_missing_folder_reports_it_does_not_exist() {
+        let folder = scratch("absent-check");
+        let _ = std::fs::remove_dir_all(&folder);
+        assert_eq!(
+            check_cache_folder(&folder.to_string_lossy()).unwrap_err(),
+            "it does not exist"
+        );
+    }
+
+    #[test]
+    fn migrate_winamp_state_moves_once_and_never_overwrites() {
+        let root = std::env::temp_dir().join(format!(
+            "spotifast-migrate-winamp-{}-{}",
+            std::process::id(),
+            rand::random::<u64>()
+        ));
+        let cache = root.join("cache");
+        let config = root.join("config");
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(cache.join("winamp.ron"), b"window state").unwrap();
+        super::migrate_winamp_state(&cache, &config);
+        assert_eq!(
+            std::fs::read(config.join("winamp.ron")).unwrap(),
+            b"window state"
+        );
+        assert!(!cache.join("winamp.ron").exists());
+        // A second run leaves an already-present config copy alone.
+        std::fs::write(cache.join("winamp.ron"), b"stale").unwrap();
+        std::fs::write(config.join("winamp.ron"), b"kept").unwrap();
+        super::migrate_winamp_state(&cache, &config);
+        assert_eq!(std::fs::read(config.join("winamp.ron")).unwrap(), b"kept");
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
